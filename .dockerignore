@@ -1,0 +1,12 @@
+.git
+.gitignore
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.DS_Store
+.vscode
+.venv
+data/*
+tests/
+reports/
