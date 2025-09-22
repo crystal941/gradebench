@@ -44,7 +44,7 @@ Simply upload these files through the web interface to get started.
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/<your-username>/gradebench.git
+   git clone https://github.com/crystal941/gradebench.git
    cd gradebench
    ```
 
