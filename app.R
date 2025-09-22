@@ -8,6 +8,9 @@ ui <- navbarPage("GradeBench Prototype",
                  tabPanel("Upload",
                           sidebarLayout(
                             sidebarPanel(
+                              radioButtons("data_source", "Select Data Source:",
+                                           choices = c("Local CSV" = "local", "Databricks SQL" = "databricks"),
+                                           selected = "local", inline = TRUE),
                               fileInput("students_file", "Upload Students CSV"),
                               fileInput("marks_file", "Upload Marks CSV"),
                               actionButton("validate", "Run Validation")
@@ -79,39 +82,60 @@ server <- function(input, output, session) {
   }
   
   observeEvent(input$validate, {
-    req(input$students_file, input$marks_file)
-    
-    s_raw <- read_csv_safe(input$students_file$datapath)
-    m_raw <- read_csv_safe(input$marks_file$datapath)
-    
-    # If readr returned an error object, show it nicely
-    if (inherits(s_raw, "error") || inherits(m_raw, "error")) {
-      msg <- paste(
-        if (inherits(s_raw, "error")) paste0("Students CSV error: ", s_raw$message) else NULL,
-        if (inherits(m_raw, "error")) paste0("Marks CSV error: ", m_raw$message) else NULL,
-        sep = "\n"
+    if (input$data_source == "local") {
+      # ---- Local CSV route ----
+      req(input$students_file, input$marks_file)
+      
+      s_raw <- read_csv_safe(input$students_file$datapath)
+      m_raw <- read_csv_safe(input$marks_file$datapath)
+      
+      if (inherits(s_raw, "error") || inherits(m_raw, "error")) {
+        msg <- paste(
+          if (inherits(s_raw, "error")) paste0("Students CSV error: ", s_raw$message) else NULL,
+          if (inherits(m_raw, "error")) paste0("Marks CSV error: ", m_raw$message) else NULL,
+          sep = "\n"
+        )
+        validation_results(data.frame(
+          column = "read_csv", issue = msg,
+          student_id = NA, assignment_id = NA, question_id = NA
+        ))
+        students(NULL); marks(NULL)
+        return()
+      }
+      
+      issues <- rbind(
+        validate_students(s_raw),
+        validate_marks(m_raw, s_raw)
       )
-      validation_results(data.frame(
-        column = "read_csv", issue = msg,
-        student_id = NA, assignment_id = NA, question_id = NA
-      ))
-      students(NULL); marks(NULL)
-      return()
-    }
-    
-    # Run validations (row-specific)
-    issues <- rbind(
-      validate_students(s_raw),
-      validate_marks(m_raw, s_raw)
-    )
-    
-    if (is.null(issues)) {
-      validation_results(data.frame(column="OK", issue="No issues found",
-                                    student_id = NA, assignment_id = NA, question_id = NA))
+      
+      if (is.null(issues)) {
+        validation_results(data.frame(column="OK", issue="No issues found",
+                                      student_id = NA, assignment_id = NA, question_id = NA))
+        students(s_raw); marks(m_raw)
+      } else {
+        validation_results(issues)
+        students(NULL); marks(NULL)
+      }
+      
+    } else if (input$data_source == "databricks") {
+      source("R/db_connect.R")
+      con <- get_databricks_con()
+      if (inherits(con, "error")) {
+        validation_results(data.frame(
+          column="db", issue=paste("Databricks connection error:", con$message),
+          student_id=NA, assignment_id=NA, question_id=NA
+        ))
+        students(NULL); marks(NULL)
+        return()
+      }
+      on.exit(DBI::dbDisconnect(con), add = TRUE)
+      
+      s_raw <- DBI::dbGetQuery(con, "SELECT * FROM workspace.gradebench.silver_students")
+      m_raw <- DBI::dbGetQuery(con, "SELECT * FROM workspace.gradebench.silver_marks")
+      
+      validation_results(data.frame(column="OK", issue="Loaded from Databricks",
+                                    student_id=NA, assignment_id=NA, question_id=NA))
       students(s_raw); marks(m_raw)
-    } else {
-      validation_results(issues)
-      students(NULL); marks(NULL)  # block downstream tabs until fixed
     }
   })
   
