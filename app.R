@@ -4,7 +4,7 @@ library(readr)
 source("R/validate.R")
 source("R/analytics.R")
 
-ui <- navbarPage("GradeBench Prototype",
+ui <- navbarPage("GradeBench",
                  tabPanel("Upload",
                           sidebarLayout(
                             sidebarPanel(
