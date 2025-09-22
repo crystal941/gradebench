@@ -39,7 +39,29 @@ ui <- navbarPage("GradeBench Prototype",
                           )
                  ),
                  tabPanel("What-if",
-                          h3("Coming soon: weights & scenarios")
+                          sidebarLayout(
+                            sidebarPanel(
+                              h4("Weights"),
+                              sliderInput("w_a1", "Assignment A1 weight (%)", min=0, max=100, value=30),
+                              sliderInput("w_a2", "Assignment A2 weight (%)", min=0, max=100, value=30),
+                              sliderInput("w_a3", "Assignment A3 weight (%)", min=0, max=100, value=40),
+                              helpText("Weights must sum to 100%"),
+                              
+                              h4("Grade Boundaries (%)"),
+                              numericInput("cut_a", "A cutoff", 85, min=0, max=100),
+                              numericInput("cut_b", "B cutoff", 75, min=0, max=100),
+                              numericInput("cut_c", "C cutoff", 60, min=0, max=100),
+                              numericInput("cut_d", "D cutoff", 50, min=0, max=100),
+                              
+                              downloadButton("download_results", "Download Adjusted Results")
+                            ),
+                            mainPanel(
+                              h4("Before vs After Comparison"),
+                              plotOutput("dist_before"),
+                              plotOutput("dist_after"),
+                              DTOutput("changes_table")
+                            )
+                          )
                  )
 )
 
@@ -117,6 +139,58 @@ server <- function(input, output, session) {
     req(marks())
     plot_box_assignment(marks())
   })
+  
+  # Reactive: base scenario (default weights + default cuts)
+  base_results <- reactive({
+    req(marks())
+    weights <- c(A1=0.3, A2=0.3, A3=0.4)
+    cuts <- c(A=85, B=75, C=60, D=50)
+    apply_scenario(marks(), weights, cuts)
+  })
+  
+  # Reactive: new scenario from user input
+  new_results <- reactive({
+    req(marks())
+    w_total <- input$w_a1 + input$w_a2 + input$w_a3
+    if (w_total == 0) return(NULL)
+    
+    weights <- c(A1=input$w_a1, A2=input$w_a2, A3=input$w_a3) / w_total
+    cuts <- c(A=input$cut_a, B=input$cut_b, C=input$cut_c, D=input$cut_d)
+    
+    apply_scenario(marks(), weights, cuts)
+  })
+  
+  # Comparison
+  comparison <- reactive({
+    req(base_results(), new_results())
+    compare_scenarios(base_results(), new_results())
+  })
+  
+  # Plots
+  output$dist_before <- renderPlot({
+    req(base_results())
+    hist(base_results()$overall, breaks=10, col="skyblue", main="Before Weights", xlab="Overall %")
+  })
+  
+  output$dist_after <- renderPlot({
+    req(new_results())
+    hist(new_results()$overall, breaks=10, col="orange", main="After Adjustments", xlab="Overall %")
+  })
+  
+  # Table of changes
+  output$changes_table <- renderDT({
+    req(comparison())
+    datatable(comparison())
+  })
+  
+  # Export
+  output$download_results <- downloadHandler(
+    filename = function() { paste0("adjusted_results.csv") },
+    content = function(file) {
+      write.csv(new_results(), file, row.names=FALSE)
+    }
+  )
+  
 }
 
 
